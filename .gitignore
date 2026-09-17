@@ -3,3 +3,5 @@ node_modules/
 static/
 dist/
 coverage/
+.env
+*.log
