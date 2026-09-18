@@ -1,62 +1,86 @@
-import express, { Express } from 'express'
-import multer from 'multer'
-import bodyParser from 'body-parser'
-import cors from 'cors'
-import fs from 'fs'
-import morgan from 'morgan'
-import path from 'path'
-import { UploadResult, imageFilter, storage } from './utilities'
+import express from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 
-const config = require('config')
+const app = express();
+const PORT = 3000;
+const baseUrl = '';
 
-const serviceConfig = config.get('service.service')
-const baseUrl = "/api"
-const corsOptions = {
- origin: 'http://localhost:3000',
-}
+/* =========================
+   Multer Setup (File Upload)
+========================= */
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, './static');
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + '-' + file.originalname;
+    cb(null, uniqueName);
+  }
+});
 
-const app = express()
+const upload = multer({ storage });
 
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({ extended: false }))
-app.use(morgan('combined'))
-app.use(cors(corsOptions))
+/* =========================
+   ROOT ROUTE (FIXED ISSUE)
+========================= */
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: "success",
+    message: "Image API is running 🚀"
+  });
+});
 
-app.get(`${baseUrl}/status`, async (req: express.Request, res: express.Response) => {
-  return res.status(200).send('Alive')
-})
+/* =========================
+   UPLOAD API
+========================= */
+app.post(`${baseUrl}/upload`, upload.array('images', 10), (req, res) => {
+  try {
+    const result: any[] = [];
 
-app.post(`${baseUrl}/images`, async (req: express.Request, res: express.Response) => {
-  let upload = multer({ storage: storage, limits: { fileSize: 1000000 }, fileFilter: imageFilter }).array('images', 10)
-
-  upload(req as any, res, async (err) => {
-    let result: UploadResult[] = []
-    if ((req as any).fileValidationError) {
-      return res.status(400).send((req as any).fileValidationError)
-    } else if (err instanceof multer.MulterError) {
-      return res.status(500).send(err)
-    } else if (err) {
-      return res.status(500).send(err)
+    if (!req.files) {
+      return res.status(400).send("No files uploaded");
     }
 
     for (const file of req.files as Express.Multer.File[]) {
-      result.push({ id: path.parse(file.filename).name, filename: file.originalname })
+      result.push({
+        id: path.parse(file.filename).name,
+        filename: file.originalname
+      });
     }
-    res.status(200).send(result)
-  })
-})
 
-app.get(`${baseUrl}/images`, async (req: express.Request, res: express.Response) => {
-  const id = req.query.id as string[]
-  try {
-    const content = fs.readFileSync(`./static/${id}.png`)
-  } catch (error) {
-    res.status(500).send({
-     error: error.message})
+    res.status(200).json(result);
+
+  } catch (error: any) {
+    res.status(500).json({
+      error: error.message
+    });
   }
-  res.status(200).sendFile(path.resolve(`./static/${id}.png`))
-})
+});
 
-app.listen(serviceConfig.port, () => {
-  console.log(`Image API listening on port ${serviceConfig.port}`)
-})
+/* =========================
+   GET IMAGE API
+========================= */
+app.get(`${baseUrl}/images`, (req, res) => {
+  const id = req.query.id as string;
+
+  if (!id) {
+    return res.status(400).json({ error: "Image id is required" });
+  }
+
+  const filePath = path.resolve(`./static/${id}.png`);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "Image not found" });
+  }
+
+  res.sendFile(filePath);
+});
+
+/* =========================
+   START SERVER
+========================= */
+app.listen(PORT, () => {
+  console.log(`Image API listening on port ${PORT}`);
+});
